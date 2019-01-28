@@ -25,7 +25,7 @@ public class HBaseManagement {
 		private static final byte[][] FAMILY_LOCATION_XY = { Bytes.toBytes("x"), Bytes.toBytes("y") };
 		private static final byte[][] FAMILY_ZOOM_LEVEL  = { Bytes.toBytes("level") };
 
-		private static final byte[] TABLE_NAME = Bytes.toBytes("famane");
+		private static final byte[] TABLE_NAME = Bytes.toBytes("pp1");
 		private static Table table = null;
 
 		private enum Family {
