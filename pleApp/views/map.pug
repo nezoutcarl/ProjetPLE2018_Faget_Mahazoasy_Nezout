@@ -1,17 +1,22 @@
 extends layout
 block content
-    #map
+    #map    
     script.
-        //var myData = !{JSON.stringify(jsonData)};
-        //Create var to hold map element, give initial settings to map
-        var map = L.map('map', { center: [44.80784,-0.59748], zoom: 20});
-        //Add OpenSteetMap tile layer to map element
-        L.tileLayer('http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        }).addTo(map);
-        // Add JSON to map
-        /*L.geoJson(myData, {
-            onEachFeature: function (feature, layer) {
-                layer.bindPopup(feature.properties.f2);
+
+        var map = L.map('map', {center: [0,0], zoom: 1, minZoom:0, maxZoom: 3});
+      
+        
+        L.TileLayer.HeightMap = L.TileLayer.extend({
+            getTileUrl: function(coords) {                
+                return "/image/"+coords.z+"/"+coords.x+"/"+coords.y;
             }
-         }).addTo(map);*/
+            
+        });
+
+        L.tileLayer.heightMap = function() {
+            return new L.TileLayer.HeightMap();
+        }
+
+        L.tileLayer.heightMap().addTo(map); 
+        //map.fitBounds(map.getBounds());
+
