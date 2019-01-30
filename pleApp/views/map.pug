@@ -8,7 +8,7 @@ block content
         
         L.TileLayer.HeightMap = L.TileLayer.extend({
             getTileUrl: function(coords) {                
-                return "/image/"+coords.z+"/"+(180-coords.y)+"/"+coords.x;
+                return "/image/"+coords.z+"/"+coords.y+"/"+coords.x;
             }
             
         });
