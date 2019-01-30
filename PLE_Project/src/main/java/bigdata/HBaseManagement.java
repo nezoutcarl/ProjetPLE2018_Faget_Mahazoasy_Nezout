@@ -75,6 +75,7 @@ public class HBaseManagement {
     			}
 			}
     		table.put(put);
+		connection.close();
     		return 0;
     	}
 
