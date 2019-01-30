@@ -6,13 +6,16 @@
     "start": "node ./bin/www"
   },
   "dependencies": {
+    "canvas": "^2.3.1",
     "cookie-parser": "~1.4.3",
     "debug": "~2.6.9",
     "express": "~4.16.0",
     "hbase": "^0.4.2",
+    "hbase-rpc-client": "^0.1.15",
     "http-errors": "~1.6.2",
     "leaflet": "^1.4.0",
     "morgan": "~1.9.0",
+    "path": "^0.12.7",
     "pug": "2.0.0-beta11"
   }
 }

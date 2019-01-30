@@ -3,12 +3,12 @@ block content
     #map    
     script.
 
-        var map = L.map('map', {center: [0,0], zoom: 1, minZoom:0, maxZoom: 3});
+        var map = L.map('map', {center: [44,-1], zoom: 9, minZoom:0, maxZoom: 9});
       
         
         L.TileLayer.HeightMap = L.TileLayer.extend({
             getTileUrl: function(coords) {                
-                return "/image/"+coords.z+"/"+coords.x+"/"+coords.y;
+                return "/image/"+coords.z+"/"+(180-coords.y)+"/"+coords.x;
             }
             
         });
