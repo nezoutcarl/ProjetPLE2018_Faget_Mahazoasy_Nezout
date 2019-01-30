@@ -25,11 +25,12 @@ router.get('/image/:z/:x/:y', (req, res, next) => {
     if (req.params.x && req.params.y && req.params.z) {
       //let rowID = req.params.x +','+ (180-Number(req.params.y));
         let key = { "z": parseInt(req.params.z),
-            "x":  parseInt(req.params.x)+256*Math.pow(2,parseInt(req.params.z)),
-            "y":  parseInt(req.params.y)+256*Math.pow(2,parseInt(req.params.z))};
+
+            "x":  parseInt(req.params.x),
+            "y":  parseInt(req.params.y)};
     
         rowKey =key.z+'/'+key.y+'/'+key.x
-        //rowKey ='3/-12/10'
+        
         get = new hbase.Get(rowKey)
         key = { "z": parseInt(req.params.z),
             "x":  parseInt(req.params.x),
@@ -40,10 +41,10 @@ router.get('/image/:z/:x/:y', (req, res, next) => {
                 res.sendFile(path.join(__dirname, '../public/default.png'))
             }
             else {
-                if(value1 !== null){
-                      
+
+                if(value1 !== null){                      
                     let val = value1.columns[0].value;
-                    console.log(val);
+
                     let data = new Buffer(val, 'base64');
                     res.contentType('image/jpeg');
                     res.send(data);

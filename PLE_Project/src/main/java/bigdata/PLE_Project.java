@@ -1,12 +1,13 @@
 package bigdata;
 
 import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.Image;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -31,6 +32,7 @@ public class PLE_Project {
 
 	private static final int INITIAL_SIDE_SIZE = 1201;
 	private static final int FINAL_SIDE_SIZE   = 256;
+	private static final int NB_ZOOMS = 3;
 
 	private static final int LATITUDE_RANGE  = 90;
 	private static final int LONGITUDE_RANGE = 180;
@@ -41,13 +43,13 @@ public class PLE_Project {
 		private static final Color WHITE_SNOW_COLOR  = new Color(0xfffafa);
 
 		public static Color getGradient(Color color1, Color color2, float percentage) {
-			int red = (int)(color1.getRed() * percentage + color2.getRed() * (1 - percentage));
-			int green = (int)(color1.getGreen() * percentage + color2.getGreen() * (1 - percentage));
-			int blue = (int)(color1.getBlue() * percentage + color2.getBlue() * (1 - percentage));
+			int red = (int) (color1.getRed() * percentage + color2.getRed() * (1 - percentage));
+			int green = (int) (color1.getGreen() * percentage + color2.getGreen() * (1 - percentage));
+			int blue = (int) (color1.getBlue() * percentage + color2.getBlue() * (1 - percentage));
 			return new Color(red, green, blue);
 		}
 
-		public static int getColor(short altitude) {
+		public static int getColor(int altitude) {
 			Color color = null;
 			if (altitude <= INTERMEDIATE_ALTITUDE) {
 				int range = INTERMEDIATE_ALTITUDE - MINIMUM_ALTITUDE;
@@ -84,21 +86,20 @@ public class PLE_Project {
 		return result;
 	}
 
-	public static byte[][] computePictureData(String location, BufferedImage bufferedImage, int zoom) throws IOException {
+	public static byte[][] computePictureData(String row, BufferedImage bufferedImage) throws IOException {
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		ImageIO.write(bufferedImage, "png", baos);
 		baos.flush();
 		byte[] image = baos.toByteArray();
 		baos.close();
-		String[] tokens = location.split("/");
-		int y = Integer.parseInt(tokens[0]);
-		int x = Integer.parseInt(tokens[1]);
+		String[] tokens = row.split("/");
+		int y = Integer.parseInt(tokens[1]);
+		int x = Integer.parseInt(tokens[2]);
 		byte[][] data = {
-				location.getBytes(),
+				row.getBytes(),
 				image,
 				{ new Integer(x).byteValue() },
-				{ new Integer(y).byteValue() },
-				{ new Integer(zoom).byteValue() }
+				{ new Integer(y).byteValue() }
 		};
 		return data;
 	}
@@ -108,14 +109,16 @@ public class PLE_Project {
 		SparkConf conf = new SparkConf().setAppName("PLE Project");
 		JavaSparkContext context = new JavaSparkContext(conf);
 		JavaPairRDD<Text, IntArrayWritable> pairRDD = context.sequenceFile("hdfs://young:9000/user/bfaget/test_projet/", Text.class, IntArrayWritable.class);
+		
+		/** Images 1201x1201 **/
 		/*JavaPairRDD<Text, IntArrayWritable> colorPairRDD = pairRDD.mapValues((IntArrayWritable x) -> {
 			int[] list = new int[x.getArray().length];
 			for (int i = 0; i < x.getArray().length; ++i) {
 				list[i] = ColorHandler.getColor(x.getArray()[i]);
 			}
 			return new IntArrayWritable(list);
-		});*/
-		/*colorPairRDD.foreach((Tuple2<Text, IntArrayWritable> pair) -> {
+		});
+		colorPairRDD.foreach((Tuple2<Text, IntArrayWritable> pair) -> {
 			int rowIndex = 0;
 			int columnIndex = 0;
 			BufferedImage bufferedImage = new BufferedImage(INITIAL_SIDE_SIZE, INITIAL_SIDE_SIZE, BufferedImage.TYPE_INT_ARGB);
@@ -129,87 +132,149 @@ public class PLE_Project {
 					columnIndex++;
 				}
 			}
-			int zoom = -1;
-			byte[][] data = computePictureData(pair._1.toString(), bufferedImage, zoom);
+			int zoom = 1;
+			String location = computeLocation(pair._1.toString());
+			int[] coordinates = computeCoordinates(location);
+			String row = zoom + "/" + (coordinates[1] + LATITUDE_RANGE) + "/" + (coordinates[0] + LONGITUDE_RANGE);
+			byte[][] data = computePictureData(row, bufferedImage);
 			HBasePictures.storePictureData(data);
 		});*/
-		int numPartitions = conf.getInt("spark.executor.instances", 10);
+		
+		/** Images 256x256 **/
 		JavaPairRDD<String, short[]> tmpPairRDD = pairRDD.mapToPair((Tuple2<Text, IntArrayWritable> pair) -> {
 			int[] intArray = pair._2.getArray();
 			short[] shortArray = new short[intArray.length];
 			for(int i = 0; i < intArray.length; ++i) {
 				shortArray[i] = (short)intArray[i];
 			}
-			return new Tuple2<String, short[]>(pair._1.toString(), shortArray);
+			return new Tuple2<>(pair._1.toString(), shortArray);
 		});
+		int numPartitions = conf.getInt("spark.executor.instances", 10);
 		tmpPairRDD = tmpPairRDD.repartition(numPartitions);
-		JavaPairRDD<String, Tuple2<short[][], short[]>> finalPairRDD = tmpPairRDD.flatMapToPair((Tuple2<String, short[]> pair) -> {
-			List<Tuple2<String, Tuple2<short[][], short[]>>> list = new ArrayList<Tuple2<String, Tuple2<short[][], short[]>>>();
-			String location = computeLocation(pair._1.toString());
+		JavaPairRDD<String, short[][]> finalPairRDD = tmpPairRDD.flatMapToPair((Tuple2<String, short[]> pair) -> {
+			List<Tuple2<String, short[][]>> list = new ArrayList<>();
+			String location = computeLocation(pair._1);
 			int[] coordinates = computeCoordinates(location);
 			int y0 = (coordinates[1] + LATITUDE_RANGE) * INITIAL_SIDE_SIZE;
 			int x0 = (coordinates[0] + LONGITUDE_RANGE) * INITIAL_SIDE_SIZE;
-			Map<String, Tuple2<short[][], short[]>> map = new HashMap<String, Tuple2<short[][], short[]>>();
+			Map<String, short[][]> map = new HashMap<>();
 			for (int i = 0; i < pair._2.length; ++i) {
 				int keyX = (x0 + i % INITIAL_SIDE_SIZE) / FINAL_SIDE_SIZE;
 				int keyY = (y0 + i / INITIAL_SIDE_SIZE) / FINAL_SIDE_SIZE;
 				String key = keyY + "/" + keyX;
-				int coordX = (x0 + i % INITIAL_SIDE_SIZE) % FINAL_SIDE_SIZE;
-				int coordY = (y0 + i / INITIAL_SIDE_SIZE) % FINAL_SIDE_SIZE;
-				short altitude = pair._2[i];
-				Tuple2<short[][], short[]> values = map.get(key);
+				short coordX = (short) ((x0 + i % INITIAL_SIDE_SIZE) % FINAL_SIDE_SIZE);
+				short coordY = (short) ((y0 + i / INITIAL_SIDE_SIZE) % FINAL_SIDE_SIZE);
+				short altitude = (short) pair._2[i];
+				short[][] values = map.get(key);
 				if (values != null) {
-					short[] coordsX = ArrayUtils.add(values._1[0], (short)coordX);
-					short[] coordsY = ArrayUtils.add(values._1[1], (short)coordY);
-					short[][] coords = { coordsX, coordsY };
-					short[] altitudes = ArrayUtils.add(values._2, altitude);
-					values = new Tuple2<short[][], short[]>(coords, altitudes);
+					values[0] = ArrayUtils.add(values[0], coordX);
+					values[0] = ArrayUtils.add(values[0], coordY);
+					values[1] = ArrayUtils.add(values[1], altitude);
 					map.replace(key, values);
 				}
 				else {
-					short[] coordsX = { (short)coordX };
-					short[] coordsY = { (short)coordY };
-					short[][] coords = { coordsX, coordsY };
-					short[] altitudes = { altitude };
-					values = new Tuple2<short[][], short[]>(coords, altitudes);
+					values = new short [2][0];
+					values[0] = ArrayUtils.add(values[0], coordX);
+					values[0] = ArrayUtils.add(values[0], coordY);
+					values[1] = ArrayUtils.add(values[1], altitude);
 					map.put(key, values);
 				}
 			}
 			for (String key: map.keySet()) {
-				list.add(new Tuple2<String, Tuple2<short[][], short[]>>(key.toString(), map.get(key)));
+				list.add(new Tuple2<>(key.toString(), map.get(key)));
 			}
 			return list.iterator();
 		});
-		finalPairRDD = finalPairRDD.reduceByKey((Tuple2<short[][], short[]> values1, Tuple2<short[][], short[]> values2) -> {
-			short[] coordsX = ArrayUtils.addAll(values1._1[0], values2._1[0]);
-			short[] coordsY = ArrayUtils.addAll(values1._1[1], values2._1[1]);
-			short[][] coords = { coordsX, coordsY };
-			short[] altitudes = ArrayUtils.addAll(values1._2, values1._2);
-			return new Tuple2<short[][], short[]>(coords, altitudes);
+		finalPairRDD = finalPairRDD.reduceByKey((short[][] values1, short[][] values2) -> {
+			values1[0] = ArrayUtils.addAll(values1[0], values2[0]);
+			values1[1] = ArrayUtils.addAll(values1[1], values2[1]);
+			return values1;
 		});
-		finalPairRDD.cache();
-		Iterator<Tuple2<String, Tuple2<short[][], short[]>>> it = finalPairRDD.collect().iterator();
-		while(it.hasNext()) {
-			Tuple2<String, Tuple2<short[][], short[]>> pair = it.next();	
-			//System.out.println("###pair._2._1 length x:"+ pair._2._1[0].length + " y:" + pair._2._1[1].length);
-			for (int i = 0; i < pair._2._1[0].length; ++i) {
-				System.out.println("-----");
-				if(pair._2._1[0][i] >= 256 ||  pair._2._1[1][i] >=256 || pair._2._1[0][i] < 0 ||  pair._2._1[1][i] <0)
-					System.out.println("###pair._2._1[0] x:"+ pair._2._1[0][i] + " y:" + pair._2._1[1][i]);
-			}
-		} 
-		/*
-		finalPairRDD.foreach((Tuple2<String, Tuple2<short[][], short[]>> pair) -> {
+		finalPairRDD.foreach((Tuple2<String, short[][]> pair) -> {
 			BufferedImage bufferedImage = new BufferedImage(FINAL_SIDE_SIZE, FINAL_SIDE_SIZE, BufferedImage.TYPE_INT_ARGB);
-			for (int i = 0; i < pair._2._1[0].length; ++i) {
-				bufferedImage.setRGB(pair._2._1[0][i], pair._2._1[1][i], new Color(ColorHandler.getColor(pair._2._2[i])).getRGB());
+			for (int i = 0; i < pair._2[1].length; ++i) {
+				bufferedImage.setRGB(pair._2[0][2 * i] % FINAL_SIDE_SIZE, pair._2[0][2 * i + 1] / FINAL_SIDE_SIZE, ColorHandler.getColor(pair._2[1][i]));
 			}
-			int zoom = -1;
-			byte[][] data = computePictureData(pair._1, bufferedImage, zoom);
+			int zoom = 1;
+			String row = zoom + "/" + pair._1;
+			byte[][] data = computePictureData(row, bufferedImage);
+			HBasePictures.storePictureData(data);
+		});
+		
+		/** Images 256x256 + 3 niveaux de zoom **/
+		/*JavaPairRDD<String, short[]> tmpPairRDD = pairRDD.mapToPair((Tuple2<Text, IntArrayWritable> pair) -> {
+			int[] intArray = pair._2.getArray();
+			short[] shortArray = new short[intArray.length];
+			for(int i = 0; i < intArray.length; ++i) {
+				shortArray[i] = (short)intArray[i];
+			}
+			return new Tuple2<>(pair._1.toString(), shortArray);
+		});
+		int numPartitions = conf.getInt("spark.executor.instances", 10);
+		tmpPairRDD = tmpPairRDD.repartition(numPartitions);
+		JavaPairRDD<String, short[][]> finalPairRDD = tmpPairRDD.flatMapToPair((Tuple2<String, short[]> pair) -> {
+			List<Tuple2<String, short[][]>> list = new ArrayList<>();
+			String location = computeLocation(pair._1);
+			int[] coordinates = computeCoordinates(location);
+			int y0 = (coordinates[1] + LATITUDE_RANGE) * INITIAL_SIDE_SIZE;
+			int x0 = (coordinates[0] + LONGITUDE_RANGE) * INITIAL_SIDE_SIZE;
+			Map<String, short[][]> map = new HashMap<>();
+			for (int z = 1; z <= NB_ZOOMS; ++z) {
+				for (int i = 0; i < pair._2.length; ++i) {
+					int zoom = (int) Math.pow(2, z);
+					int keyX = (x0 + i % INITIAL_SIDE_SIZE) / (FINAL_SIDE_SIZE * zoom);
+					int keyY = (y0 + i / INITIAL_SIDE_SIZE) / (FINAL_SIDE_SIZE * zoom);
+					String key = z + "/" + keyY + "/" + keyX;
+					short coordX = (short) ((x0 + i % INITIAL_SIDE_SIZE) % (FINAL_SIDE_SIZE * zoom));
+					short coordY = (short) ((y0 + i / INITIAL_SIDE_SIZE) % (FINAL_SIDE_SIZE * zoom));
+					short altitude = (short) pair._2[i];
+					short[][] values = map.get(key);
+					if (values != null) {
+						values[0] = ArrayUtils.add(values[0], coordX);
+						values[0] = ArrayUtils.add(values[0], coordY);
+						values[1] = ArrayUtils.add(values[1], altitude);
+						map.replace(key, values);
+					}
+					else {
+						values = new short [2][0];
+						values[0] = ArrayUtils.add(values[0], coordX);
+						values[0] = ArrayUtils.add(values[0], coordY);
+						values[1] = ArrayUtils.add(values[1], altitude);
+						map.put(key, values);
+					}
+				}
+			}
+			for (String key: map.keySet()) {
+				list.add(new Tuple2<>(key.toString(), map.get(key)));
+			}
+			return list.iterator();
+		});
+		finalPairRDD = finalPairRDD.reduceByKey((short[][] values1, short[][] values2) -> {
+			values1[0] = ArrayUtils.addAll(values1[0], values2[0]);
+			values1[1] = ArrayUtils.addAll(values1[1], values2[1]);
+			return values1;
+		});
+		finalPairRDD.foreach((Tuple2<String, short[][]> pair) -> {
+			String[] tokens = pair._1.split("/");
+			int z = Integer.parseInt(tokens[0]);
+			int zoom = (int) Math.pow(2, z);
+			BufferedImage bufferedImage = new BufferedImage(FINAL_SIDE_SIZE * zoom, FINAL_SIDE_SIZE * zoom, BufferedImage.TYPE_INT_ARGB);
+			for (int i = 0; i < pair._2[1].length; ++i) {
+				bufferedImage.setRGB(pair._2[0][2 * i] % (FINAL_SIDE_SIZE * zoom), pair._2[0][2 * i + 1] / (FINAL_SIDE_SIZE * zoom), ColorHandler.getColor(pair._2[1][i]));
+			}
+			if (z > 1) {
+				Image tmpImage = bufferedImage.getScaledInstance(FINAL_SIDE_SIZE * zoom, FINAL_SIDE_SIZE * zoom, Image.SCALE_FAST);
+		        BufferedImage resizedImage = new BufferedImage(FINAL_SIDE_SIZE, FINAL_SIDE_SIZE, BufferedImage.TYPE_INT_ARGB);
+		        Graphics2D g2d = resizedImage.createGraphics();
+		        g2d.drawImage(tmpImage, 0, 0, null);
+		        g2d.dispose();
+		        bufferedImage = resizedImage;
+			}
+			byte[][] data = computePictureData(pair._1, bufferedImage);
 			HBasePictures.storePictureData(data);
 		});*/
+
 		context.close();
 		System.exit(exitCode);
-	}
-	
+	}	
 }
