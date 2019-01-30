@@ -26,15 +26,15 @@ router.get('/image/:z/:y/:x', (req, res, next) => {
       //let rowID = req.params.x +','+ (180-Number(req.params.y));
         let key = { "z": 1,
 
-            "y": Number(req.params.y),
-            "x": 360- Number(req.params.x)};
+            "y": 180 - Number(req.params.y),
+            "x": Number(req.params.x)};
 
         rowKey =key.z+'/'+key.y+'/'+key.x 
         console.log(rowKey);
         //rowKey= '1/170/200'
         get = new hbase.Get(rowKey)
     
-        client.get('famane1201_hgt', get,function(error,value1) { 
+        client.get('famane1201_seq', get,function(error,value1) { 
             
            try {
             if(value1 !== null){                      
