@@ -17,18 +17,14 @@ import org.apache.hadoop.util.Tool;
 
 public class HBaseManagement {
 	public static class HBasePictures extends Configured implements Tool {
-		private static final byte[] FAMILY_IMAGE    = Bytes.toBytes("image");
-		private static final byte[] FAMILY_LOCATION = Bytes.toBytes("location");
+		private static final byte[] FAMILY_IMAGE = Bytes.toBytes("image");
+		private static final byte[][] COLUMN_IMAGE_PNG = { Bytes.toBytes("png") };
 
-		private static final byte[][] FAMILY_IMAGE_PNG   = { Bytes.toBytes("png") };
-		private static final byte[][] FAMILY_LOCATION_XY = { Bytes.toBytes("x"), Bytes.toBytes("y") };
-
-		private static final byte[] TABLE_NAME = Bytes.toBytes("famane256");
+		private static final byte[] TABLE_NAME = Bytes.toBytes("famane1201_hgt");
 		private static Table table = null;
 
 		private enum Family {
-			image(FAMILY_IMAGE, FAMILY_IMAGE_PNG),
-			location(FAMILY_LOCATION, FAMILY_LOCATION_XY);
+			image(FAMILY_IMAGE, COLUMN_IMAGE_PNG);
 			
 			private byte[] name = Bytes.toBytes("");
 			private byte[][] columns = Bytes.toByteArrays(Bytes.toBytes(""));
